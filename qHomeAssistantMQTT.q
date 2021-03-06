@@ -1,4 +1,5 @@
 \l mqtt.q
+\l qjinja.q
 port:1883
 broker_address:.z.x[0]
 HDB:hsym `$.z.x[1]
@@ -9,9 +10,9 @@ cHour:hour .z.p
 .z.zd:17 2 6
 
 sensorConfigHist:([] name:`$();topic:`$();state_topic:`$();payload:())
-sensorStateHist:([] int:`int$();time:`timestamp$();node:`$();name:`$();state:())
+sensorStateHist:([] int:`int$();time:`timestamp$();name:`$();state:())
 sensorConfig:([name:`$()] topic:`$();state_topic:`$();payload:())
-sensorState:([] time:`timestamp$();node:`$();name:`$();state:())
+sensorState:([] time:`timestamp$();name:`$();state:())
 
 if[count key HDB;
    system"l ",1_string HDB;
@@ -34,10 +35,9 @@ writeToDisk:{[now]
  }
 
 store:{[now;top;msg]
- msg:.j.k msg;
- n:count msg;
- d:`object_id`node_id!@[;0 1]reverse "/" vs neg[count "/state"]_count[discoveryPrefix,"/sensor/"]_.debug.thing[0];
- `sensorState insert (n#now;`$n#enlist d`node_id;`$d[`object_id],/:string key msg;value msg)
+ sensors:select name,value_template:payload[;`value_template] from sensorConfig where state_topic=`$top;
+ sensors:update time:now,val:{{$[x~"None";0Nf;"F"$x]}.qjinja.extract[x;y]}[;msg] each value_template from sensors;
+ `sensorState insert value exec time,name,val from sensors where not null val
  }
 
 .mqtt.msgrcvd:{[top;msg]
@@ -49,8 +49,9 @@ store:{[now;top;msg]
      ];
   if[top like discoveryPrefix,"/sensor/*config";
     payload:.j.k msg;
+    .mqtt.sub[`$payload`state_topic];
     `sensorConfig upsert (`$payload`name;`$top;`$payload`state_topic;payload);:(::)];
-  if[top like discoveryPrefix,"/sensor/*state";
+  if[(`$top) in exec state_topic from sensorConfig;
      store[now;top;msg]];
  }
 
