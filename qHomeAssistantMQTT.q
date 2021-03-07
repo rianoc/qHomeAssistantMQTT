@@ -4,14 +4,14 @@ port:1883
 broker_address:.z.x[0]
 HDB:hsym `$.z.x[1]
 discoveryPrefix:"homeassistant"
-hour:{`int$sum 24 1*`date`hh$x}
+hour:{`int$sum 24 1*`date`hh$\:x}
 intToTS:{`timestamp$`long$0D01*x} 
 cHour:hour .z.p
 .z.zd:17 2 6
 
-sensorConfigHist:([] name:`$();topic:`$();state_topic:`$();payload:())
+sensorConfigHist:([] name:`$();topic:`$();state_topic:`$();opts:())
 sensorStateHist:([] int:`int$();time:`timestamp$();name:`$();state:())
-sensorConfig:([name:`$()] topic:`$();state_topic:`$();payload:())
+sensorConfig:([name:`$()] topic:`$();state_topic:`$();opts:())
 sensorState:([] time:`timestamp$();name:`$();state:())
 
 if[count key HDB;
@@ -35,26 +35,26 @@ writeToDisk:{[now]
  }
 
 store:{[now;top;msg]
- sensors:select name,value_template:payload[;`value_template] from sensorConfig where state_topic=`$top;
+ sensors:select name,value_template:opts[;`value_template] from sensorConfig where state_topic=`$top;
  sensors:update time:now,val:{{$[x~"None";0Nf;"F"$x]}.qjinja.extract[x;y]}[;msg] each value_template from sensors;
  `sensorState insert value exec time,name,val from sensors where not null val
  }
 
-.mqtt.msgrcvd:{[top;msg]
-  .debug.thing:(top;msg);
+.mqtt.msgrcvd:{[topic;msg]
   now:.z.p;
-  area:`$first -2#"/" vs top;
   if[cHour<hour now;
       writeToDisk[now];
      ];
-  if[top like discoveryPrefix,"/sensor/*config";
-    payload:.j.k msg;
-    .mqtt.sub[`$payload`state_topic];
-    `sensorConfig upsert (`$payload`name;`$top;`$payload`state_topic;payload);:(::)];
-  if[(`$top) in exec state_topic from sensorConfig;
-     store[now;top;msg]];
+  if[topic like discoveryPrefix,"/sensor/*/config";
+    opts:.j.k msg;
+    .mqtt.sub[`$opts`state_topic];
+    `sensorConfig upsert (`$opts`name;`$topic;`$opts`state_topic;opts);:(::)];
+  if[(`$topic) in exec state_topic from sensorConfig;
+     store[now;topic;msg]];
  }
 
 queryState:{[sensor;sTime;eTime]
-  select from sensorState where name=sensor,time within (sTime;eTime)
+  hist:delete int from select from sensorStateHist where int within hour (sTime;eTime),name like sensor,time within (sTime;eTime);
+  realtime:select from sensorState where name like sensor,time within (sTime;eTime);
+  hist,realtime
  }
